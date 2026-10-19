@@ -4,6 +4,7 @@
     "type": "project",
     "require": {
         "php": ">=8.5",
+        "ext-openssl": "*",
         "ext-pdo_pgsql": "*",
         "illuminate/database": "^13.35",
         "illuminate/events": "^13.35",

@@ -1,90 +1,167 @@
-# Учебное окружение: nginx + php-fpm + PostgreSQL
+# Trello Web App — Архитектура Backend (Лекция 5)
 
-Простой стек для практики Docker Compose: nginx как веб-сервер и
-реверс-прокси к php-fpm 8.5 (чистый PHP, без фреймворков), PostgreSQL 18
-как база данных. Все три образа собираются локально из Dockerfile в `docker/`.
+Стек: **Nginx + PHP-FPM 8.5 + PostgreSQL + Eloquent ORM + Monolog + OpenSSL AES-256-GCM**.
+
+Проект реализует требования лекции 5:
+1. **Статический конфигуратор по окружениям** (`common`, `local`, `production`, `test`).
+2. **Шифрование чувствительных параметров** (паролей, токенов) с использованием расширения PHP `openssl` (AES-256-GCM) и префиксом `enc:v1:`.
+3. **Консольная утилита CLI (`bin/config`)** для генерации ключа шифрования, шифрования и дешифрования.
+4. **Схема базы данных на 4 основные таблицы** (`users`, `boards`, `board_columns`, `cards`) с индексами и связями.
+5. Безопасность: пароли и мастер-ключи **не коммитятся в git** (`.env` в `.gitignore`).
+
+---
 
 ## Быстрый старт
 
 ```bash
-make init && make up && make composer
-```
+# 1. Инициализация .env (если ещё не создан)
+make init
 
-- `make init` создаёт `.env` из `.env.example` и подставляет в него UID/GID
-  текущего пользователя (нужно, чтобы файлы, которые пишет php-контейнер,
-  на хосте принадлежали вам, а не root).
-- `make up` собирает (если ещё не собраны) и поднимает контейнеры.
-- `make composer` ставит зависимости приложения в `app/vendor/`.
+# 2. Сборка и запуск контейнеров
+make build
+make up
+
+# 3. Установка зависимостей через Composer
+make composer
+
+# 4. Генерация ключа шифрования конфига (запишите его в .env -> APP_CONFIG_KEY=...)
+make keygen
+
+# 5. Применение миграций БД (создание 4 таблиц и индексов)
+make migrate
+```
 
 После этого:
+- **Веб-интерфейс:** [http://127.0.0.1:8080/](http://127.0.0.1:8080/)
+- **Health-check:** [http://127.0.0.1:8080/health.php](http://127.0.0.1:8080/health.php)
+- **PostgreSQL:** `127.0.0.1:5432` (`make psql`)
 
-- приложение — http://127.0.0.1:8080/
-- health-check — http://127.0.0.1:8080/health.php
-- PostgreSQL слушает `127.0.0.1:5432` — можно подключиться любым GUI-клиентом
-  (логин/пароль/база — из `.env`), либо `make psql` для консоли.
+---
 
-Остальные команды — в `make help`.
+## 1. Конфигурация и окружения (`App\Config\Config`)
 
-## Когда пересобирать, а когда достаточно F5 или restart
+Файл `app/config/params.php` возвращает ассоциативный массив параметров по секциям:
+- `common` — общие параметры приложения (имя, версия, порт БД и т.д.);
+- `local` — параметры для локальной разработки (`APP_ENV=local`);
+- `production` — параметры для продакшена (`APP_ENV=production`);
+- `test` — параметры для тестов (`APP_ENV=test`).
 
-- **Правки в `app/`** (PHP-код) — видны сразу, без пересборки и рестарта.
-  `./app` смонтирован в контейнеры как volume, а opcache в dev-конфиге
-  (`opcache.validate_timestamps = 1`, `opcache.revalidate_freq = 0`)
-  проверяет изменения файла на каждый запрос. Просто обновите страницу.
-- **Правки в конфигах** (`docker/nginx/conf.d/*.conf`, `php.ini`, `www.conf`,
-  `postgresql.conf`) — тоже volume, но применяются не мгновенно: нужен
-  `docker compose restart <сервис>`, потому что nginx/php-fpm/postgres
-  читают их только при старте.
-- **Правки в `Dockerfile` или `app/composer.json`** (новое системное
-  расширение PHP, системный пакет, PHP-зависимость) — нужен `make build`,
-  затем `make up` (и `make composer`, если менялся `composer.json`).
+Класс `App\Config\Config`:
+- Читает активное окружение из переменной `APP_ENV`;
+- Объединяет секцию `common` с выбранным окружением (`array_replace_recursive`);
+- Поддерживает получение через точечную нотацию: `$config->get('db.host')`;
+- **Автоматически расшифровывает зашифрованные параметры** при обращении через `get()` с помощью `Encryptor`.
 
-## Ловушка: initdb выполняется только один раз
+---
 
-`docker/postgres/initdb/*.sql` применяется исключительно при инициализации
-**пустого** тома `pgdata` — то есть один раз, при самом первом старте. Если
-окружение уже поднималось и вы правите `01-init.sql`, он не выполнится
-повторно сам по себе. Чтобы применить изменения — снести том и поднять
-заново:
+## 2. Шифрование параметров (`App\Security\Encryptor`)
+
+- **Алгоритм:** `aes-256-gcm` (аутентифицированное симметричное шифрование).
+- **Формат шифртекста:** `enc:v1:<base64(iv[12] . tag[16] . ciphertext)>`.
+- **Мастер-ключ:** 32 криптостойких байта в формате `base64:...`, передается через переменную окружения `APP_CONFIG_KEY`.
+
+### Консольные команды (`bin/config`):
 
 ```bash
-make clean && make up
+# Сгенерировать новый мастер-ключ:
+docker compose exec php php bin/config key:generate
+
+# Зашифровать значение (например пароль БД):
+docker compose exec php php bin/config encrypt "my-super-secret-password"
+
+# Расшифровать значение:
+docker compose exec php php bin/config decrypt "enc:v1:..."
+
+# Показать текущую конфигурацию (скрытые значения):
+docker compose exec php php bin/config show
+
+# Показать конфигурацию с расшифровкой секретов:
+docker compose exec php php bin/config show --decrypt
 ```
 
-Это удалит все данные в PostgreSQL.
+---
 
-## Linux / macOS / Windows (WSL2)
+## 3. Схема базы данных (Миграции и Eloquent)
 
-`make init` подставляет в `.env` реальные UID/GID текущего пользователя, а
-Dockerfile php пересоздаёт `www-data` с этими же ID (`groupmod`/`usermod -o`,
-флаг `-o` — потому что нужный GID нередко уже занят какой-то системной группой
-в образе, например `dialout`). За счёт этого владелец файлов, которые
-php-fpm пишет в bind mount (`app/vendor` и т.п.), на хосте совпадает с вами,
-а не с root — проверено на Linux, macOS и Windows/WSL2.
+Миграции запускаются командой `make migrate` (`php bin/migrate`). Создаются 4 основные таблицы:
 
-- **Linux** — работает «из коробки»: bind mount напрямую транслирует UID/GID
-  между хостом и контейнером.
-- **macOS** (Docker Desktop) — тоже напрямую: virtiofs корректно пробрасывает
-  владельца файлов.
-- **Windows + WSL2** — запускайте `make`/`docker compose` из терминала
-  WSL2-дистрибутива (не из PowerShell/cmd) и держите проект **внутри
-  файловой системы WSL2** (например `~/projects/...`), а не на `/mnt/c/...`.
-  Диски Windows подключены в WSL2 через DrvFs, которая не хранит настоящие
-  Unix-права — владелец файлов там не будет соответствовать UID/GID из
-  `.env`, независимо от настроек Dockerfile. Также проверьте, что в Docker
-  Desktop включена WSL-интеграция для вашего дистрибутива (Settings →
-  Resources → WSL Integration).
-- **Переносы строк** — `.gitattributes` форсирует LF для всех файлов
-  репозитория, чтобы `git clone` на Windows с `core.autocrlf=true` не
-  проставил CRLF в Dockerfile/Makefile/конфигах (это бы сломало их разбор
-  внутри Linux-контейнеров).
+1. **`users`**
+   - `user_id` SERIAL PRIMARY KEY
+   - `email` VARCHAR(255) NOT NULL
+   - `password_hash` VARCHAR(255) NOT NULL
+   - `name` VARCHAR(255) NOT NULL
+   - `created_datetime` TIMESTAMP NOT NULL
+   - `updated_datetime` TIMESTAMP NULL
+   - Индекс: `idx_email` (UNIQUE)
 
-## Структура
+2. **`boards`**
+   - `board_id` SERIAL PRIMARY KEY
+   - `title` VARCHAR(255) NOT NULL
+   - `owner_user_id` INT NOT NULL (связь с `users.user_id`)
+   - `is_public` BOOLEAN NOT NULL DEFAULT false
+   - `created_datetime` TIMESTAMP NOT NULL
+   - `updated_datetime` TIMESTAMP NULL
+
+3. **`board_columns`**
+   - `column_id` SERIAL PRIMARY KEY
+   - `board_id` INT NOT NULL (связь с `boards.board_id`)
+   - `ordinal_position` SMALLINT NOT NULL
+   - `title` VARCHAR(255) NOT NULL
+   - `color` VARCHAR(6) NULL
+   - Индекс: `idx_board_id`
+
+4. **`cards`**
+   - `card_id` SERIAL PRIMARY KEY
+   - `board_id` INT NOT NULL
+   - `column_id` INT NOT NULL
+   - `sort_index` SMALLINT NOT NULL
+   - `title` VARCHAR(255) NOT NULL
+   - `content` TEXT NULL
+   - `color` VARCHAR(6) NULL
+   - `is_archived` BOOLEAN NOT NULL DEFAULT false
+   - `created_datetime` TIMESTAMP NOT NULL
+   - `updated_datetime` TIMESTAMP NULL
+   - Частичный индекс: `idx_active_board_id ON cards (board_id) WHERE is_archived = false;`
+
+Eloquent-модели находятся в каталоге `app/src/Models/`:
+- `User` (`app/src/Models/User.php`)
+- `Board` (`app/src/Models/Board.php`)
+- `BoardColumn` (`app/src/Models/BoardColumn.php`)
+- `Card` (`app/src/Models/Card.php`)
+
+---
+
+## Структура каталогов
 
 ```
-app/            — код приложения (PSR-4 автозагрузка App\ → src/)
-docker/nginx/   — Dockerfile + конфиг nginx
-docker/php/     — Dockerfile + php.ini + пул php-fpm (www.conf)
-docker/postgres/— Dockerfile + postgresql.conf + init-скрипты
-compose.yaml    — оркестрация; значения по умолчанию — в .env.example
+compose.yaml, Makefile, .env.example, .gitignore
+docker/
+├── nginx/
+├── php/ (Dockerfile с ext-openssl, pdo_pgsql, intl, zip)
+└── postgres/
+app/
+├── bin/
+│   ├── config                  # CLI утилита шифрования и просмотра конфигов
+│   └── migrate                 # CLI раннер миграций базы данных
+├── config/
+│   └── params.php              # Статический конфиг (common, local, production, test)
+├── database/
+│   └── migrate.php             # Определение схемы 4 таблиц и индексов
+├── public/
+│   ├── index.php               # Веб-страница с информацией о Config и таблицах
+│   └── health.php              # Healthcheck эндпоинт
+├── src/
+│   ├── Config/
+│   │   └── Config.php          # Класс конфигуратора
+│   ├── Security/
+│   │   └── Encryptor.php       # Класс шифрования AES-256-GCM
+│   ├── Models/
+│   │   ├── User.php
+│   │   ├── Board.php
+│   │   ├── BoardColumn.php
+│   │   ├── Card.php
+│   │   └── Demo.php
+│   ├── Database.php            # Подключение Eloquent с параметрами из Config
+│   └── Logger.php              # Monolog логгер HTTP-запросов
+└── composer.json
 ```

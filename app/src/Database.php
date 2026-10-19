@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App;
 
+use App\Config\Config;
 use PDO;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Events\Dispatcher;
@@ -14,7 +15,7 @@ final class Database
     private static bool $booted = false;
 
     /**
-     * Инициализация Eloquent Capsule ORM
+     * Инициализация Eloquent Capsule ORM с получением параметров из Config
      */
     public static function init(): void
     {
@@ -22,18 +23,35 @@ final class Database
             return;
         }
 
+        $config = null;
+        try {
+            $config = Config::load();
+        } catch (\Throwable) {
+            // fallback to getenv
+        }
+
+        $host = $config?->get('db.host') ?: (getenv('DB_HOST') ?: (getenv('POSTGRES_HOST') ?: 'postgres'));
+        $port = $config?->get('db.port') ?: (getenv('DB_PORT') ?: (getenv('POSTGRES_PORT') ?: 5432));
+        $database = $config?->get('db.database') ?: (getenv('DB_NAME') ?: (getenv('POSTGRES_DB') ?: 'app'));
+        $username = $config?->get('db.username') ?: (getenv('DB_USER') ?: (getenv('POSTGRES_USER') ?: 'app'));
+        $password = $config?->get('db.password') ?: (getenv('DB_PASSWORD') ?: (getenv('POSTGRES_PASSWORD') ?: ''));
+        $driver = $config?->get('db.driver') ?: 'pgsql';
+        $charset = $config?->get('db.charset') ?: 'utf8';
+        $prefix = $config?->get('db.prefix') ?: '';
+        $schema = $config?->get('db.schema') ?: 'public';
+
         $capsule = new Capsule();
 
         $capsule->addConnection([
-            'driver'    => 'pgsql',
-            'host'      => getenv('DB_HOST') ?: (getenv('POSTGRES_HOST') ?: 'postgres'),
-            'port'      => getenv('DB_PORT') ?: (getenv('POSTGRES_PORT') ?: 5432),
-            'database'  => getenv('DB_NAME') ?: (getenv('POSTGRES_DB') ?: 'app'),
-            'username'  => getenv('DB_USER') ?: (getenv('POSTGRES_USER') ?: 'app'),
-            'password'  => getenv('DB_PASSWORD') ?: (getenv('POSTGRES_PASSWORD') ?: ''),
-            'charset'   => 'utf8',
-            'prefix'    => '',
-            'schema'    => 'public',
+            'driver'    => (string) $driver,
+            'host'      => (string) $host,
+            'port'      => (int) $port,
+            'database'  => (string) $database,
+            'username'  => (string) $username,
+            'password'  => (string) $password,
+            'charset'   => (string) $charset,
+            'prefix'    => (string) $prefix,
+            'schema'    => (string) $schema,
         ]);
 
         $capsule->setEventDispatcher(new Dispatcher(new Container()));

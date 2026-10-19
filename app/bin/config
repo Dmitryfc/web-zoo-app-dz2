@@ -1,0 +1,155 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use App\Config\Config;
+use App\Security\Encryptor;
+
+function printHelp(): void
+{
+    echo <<<HELP
+Console Configuration & Encryption Utility
+
+Usage:
+  php bin/config <command> [arguments] [options]
+
+Commands:
+  key:generate            Generate a secure 32-byte encryption key for APP_CONFIG_KEY
+  encrypt <value>         Encrypt a plaintext value (returns enc:v1:<base64>)
+  decrypt <enc_value>     Decrypt an encrypted value
+  show [--env=NAME] [-d]  Show configuration parameters (-d/--decrypt to reveal secrets)
+  help                    Show this help message
+
+Options:
+  --key=<base64_key>      Explicitly pass the encryption key instead of APP_CONFIG_KEY
+  --env=<environment>     Specify environment for 'show' (local, production, test)
+  -d, --decrypt           Decrypt values when printing configuration in 'show'
+
+Examples:
+  php bin/config key:generate
+  php bin/config encrypt "my-secret-db-password"
+  php bin/config decrypt "enc:v1:..."
+  php bin/config show --decrypt
+
+HELP;
+}
+
+$args = array_slice($argv, 1);
+if (empty($args)) {
+    printHelp();
+    exit(0);
+}
+
+$command = $args[0];
+
+// Разбор флагов: --key=..., --env=..., --decrypt, -d
+$explicitKey = null;
+$customEnv = null;
+$decryptFlag = false;
+$positional = [];
+
+for ($i = 1; $i < count($args); $i++) {
+    $arg = $args[$i];
+    if (str_starts_with($arg, '--key=')) {
+        $explicitKey = substr($arg, 6);
+    } elseif (str_starts_with($arg, '--env=')) {
+        $customEnv = substr($arg, 6);
+    } elseif ($arg === '--decrypt' || $arg === '-d') {
+        $decryptFlag = true;
+    } else {
+        $positional[] = $arg;
+    }
+}
+
+try {
+    switch ($command) {
+        case 'key:generate':
+            $newKey = Encryptor::generateKey();
+            echo "New encryption key generated successfully:\n\n";
+            echo "  " . $newKey . "\n\n";
+            echo "Add this line to your .env file:\n";
+            echo "  APP_CONFIG_KEY=" . $newKey . "\n";
+            break;
+
+        case 'encrypt':
+            if (empty($positional)) {
+                fwrite(STDERR, "Error: missing value to encrypt.\nUsage: php bin/config encrypt <value>\n");
+                exit(1);
+            }
+            $plain = $positional[0];
+            $encryptor = $explicitKey !== null
+                ? Encryptor::fromString($explicitKey)
+                : Encryptor::fromEnv();
+
+            $encrypted = $encryptor->encrypt($plain);
+            echo $encrypted . "\n";
+            break;
+
+        case 'decrypt':
+            if (empty($positional)) {
+                fwrite(STDERR, "Error: missing value to decrypt.\nUsage: php bin/config decrypt <enc_value>\n");
+                exit(1);
+            }
+            $payload = $positional[0];
+            $encryptor = $explicitKey !== null
+                ? Encryptor::fromString($explicitKey)
+                : Encryptor::fromEnv();
+
+            $decrypted = $encryptor->decrypt($payload);
+            echo $decrypted . "\n";
+            break;
+
+        case 'show':
+            $encryptor = null;
+            if ($decryptFlag) {
+                $encryptor = $explicitKey !== null
+                    ? Encryptor::fromString($explicitKey)
+                    : Encryptor::fromEnv();
+            }
+
+            $config = Config::load(env: $customEnv, encryptor: $encryptor);
+            echo "Environment: [" . $config->env() . "]\n";
+            echo "Available environments: " . implode(', ', $config->environments()) . "\n\n";
+
+            $flatten = function (array $items, string $prefix = '') use (&$flatten): array {
+                $res = [];
+                foreach ($items as $k => $v) {
+                    $key = $prefix === '' ? (string)$k : $prefix . '.' . $k;
+                    if (is_array($v)) {
+                        $res = array_merge($res, $flatten($v, $key));
+                    } else {
+                        $res[$key] = $v;
+                    }
+                }
+                return $res;
+            };
+
+            $params = $decryptFlag ? $config->allDecrypted() : $config->all();
+            $flat = $flatten($params);
+
+            $maxKeyLen = max(array_map('strlen', array_keys($flat)));
+            foreach ($flat as $k => $v) {
+                $vStr = is_bool($v) ? ($v ? 'true' : 'false') : (is_null($v) ? 'null' : (string)$v);
+                $isEnc = $config->isEncrypted($k);
+                $tag = $isEnc ? ($decryptFlag ? ' (decrypted)' : ' [ENCRYPTED]') : '';
+                printf("  %-{$maxKeyLen}s = %s%s\n", $k, $vStr, $tag);
+            }
+            break;
+
+        case 'help':
+        case '--help':
+        case '-h':
+            printHelp();
+            break;
+
+        default:
+            fwrite(STDERR, "Unknown command: '{$command}'. Run 'php bin/config help' for usage.\n");
+            exit(1);
+    }
+} catch (\Throwable $e) {
+    fwrite(STDERR, "Error: " . $e->getMessage() . "\n");
+    exit(1);
+}

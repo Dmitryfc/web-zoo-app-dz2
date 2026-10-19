@@ -19,6 +19,9 @@ help:
 	@echo "make logs      — логи всех сервисов (follow)"
 	@echo "make clean     — down -v: остановить и удалить volume pgdata (данные будут потеряны)"
 	@echo "make composer  — composer install внутри php-контейнера"
+	@echo "make migrate   — применить миграции базы данных"
+	@echo "make keygen    — сгенерировать ключ шифрования конфига"
+	@echo "make config    — вывести текущую конфигурацию"
 	@echo "make sh        — shell в php-контейнере"
 	@echo "make psql      — консоль psql к postgres"
 
@@ -60,6 +63,18 @@ clean:
 # владельца из UID/GID, заданных при `make init`, а не root
 composer:
 	docker compose exec -u www-data php composer install
+
+migrate:
+	docker compose exec -u www-data php php bin/migrate
+
+keygen:
+	docker compose exec php php bin/config key:generate
+
+config:
+	docker compose exec php php bin/config show
+
+config-decrypted:
+	docker compose exec php php bin/config show --decrypt
 
 sh:
 	docker compose exec php sh

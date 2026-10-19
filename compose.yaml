@@ -35,6 +35,8 @@ services:
       - ./docker/php/php.ini:/usr/local/etc/php/conf.d/zz-custom.ini:ro
       - ./docker/php/www.conf:/usr/local/etc/php-fpm.d/www.conf:ro
     environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_CONFIG_KEY: ${APP_CONFIG_KEY:-}
       DB_HOST: postgres
       DB_PORT: "5432"
       DB_NAME: ${POSTGRES_DB}

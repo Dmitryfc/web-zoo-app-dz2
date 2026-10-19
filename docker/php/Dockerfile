@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libicu-dev \
         libzip-dev \
         libfcgi-bin \
+        openssl \
     && docker-php-ext-install -j"$(nproc)" pdo_pgsql \
     && docker-php-ext-install -j"$(nproc)" intl \
     && docker-php-ext-install -j"$(nproc)" zip \
