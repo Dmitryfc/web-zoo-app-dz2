@@ -1,4 +1,4 @@
-# Trello Web App — Архитектура Backend
+# Web Zoo App (dz2) — Архитектура Backend
 
 Стек: **Nginx + PHP-FPM 8.5 + PostgreSQL + Eloquent ORM + Monolog + OpenSSL AES-256-GCM**.
 

@@ -39,7 +39,7 @@ if (!$schema->hasTable('request_logs')) {
     echo "[SKIP] Table 'request_logs' already exists." . PHP_EOL;
 }
 
-// 3. Таблица users (Лекция 5, слайд 6)
+// 3. Таблица users
 if (!$schema->hasTable('users')) {
     $schema->create('users', function (Blueprint $table) {
         $table->increments('user_id');
@@ -56,7 +56,7 @@ if (!$schema->hasTable('users')) {
     echo "[SKIP] Table 'users' already exists." . PHP_EOL;
 }
 
-// 4. Таблица boards (Лекция 5, слайд 7)
+// 4. Таблица boards
 if (!$schema->hasTable('boards')) {
     $schema->create('boards', function (Blueprint $table) {
         $table->increments('board_id');
@@ -74,7 +74,7 @@ if (!$schema->hasTable('boards')) {
     echo "[SKIP] Table 'boards' already exists." . PHP_EOL;
 }
 
-// 5. Таблица board_columns (Лекция 5, слайд 8)
+// 5. Таблица board_columns
 if (!$schema->hasTable('board_columns')) {
     $schema->create('board_columns', function (Blueprint $table) {
         $table->increments('column_id');
@@ -91,7 +91,7 @@ if (!$schema->hasTable('board_columns')) {
     echo "[SKIP] Table 'board_columns' already exists." . PHP_EOL;
 }
 
-// 6. Таблица cards (Лекция 5, слайд 9)
+// 6. Таблица cards
 if (!$schema->hasTable('cards')) {
     $schema->create('cards', function (Blueprint $table) {
         $table->increments('card_id');

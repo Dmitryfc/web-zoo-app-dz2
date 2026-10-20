@@ -17,7 +17,7 @@ declare(strict_types=1);
 return [
     'common' => [
         'app' => [
-            'name' => 'Trello Application',
+            'name' => 'Web Zoo App (dz2)',
             'version' => '1.0.0',
         ],
         'db' => [
