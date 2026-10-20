@@ -40,7 +40,7 @@ return [
             'database' => 'app',
             'username' => 'app',
             // Зашифрованный пароль 'app_dev_password' (генерируется через php bin/config encrypt)
-            'password' => 'enc:v1:3B02Zl3tFz2C1v5N4e8M7Q==',
+            'password' => 'enc:v1:ahR3zqrZq2sVPeWn9b5MQ4FEIt1Y8F2z4TXZDu8HT1vGpxtaAPL+d5rVAiE=',
         ],
     ],
 
