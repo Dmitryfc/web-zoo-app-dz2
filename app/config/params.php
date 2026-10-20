@@ -17,7 +17,7 @@ declare(strict_types=1);
 return [
     'common' => [
         'app' => [
-            'name' => 'Web Zoo App (dz2)',
+            'name' => 'web-zoo-app/dz2',
             'version' => '1.0.0',
         ],
         'db' => [

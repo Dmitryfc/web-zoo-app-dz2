@@ -58,7 +58,7 @@ ob_start();
 <html lang="ru">
 <head>
     <meta charset="utf-8">
-    <title>Web Zoo App (dz2) — Конфиги и схемы БД</title>
+    <title>web-zoo-app/dz2 — Конфиги и схемы БД</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 900px; margin: 30px auto; padding: 0 20px; color: #333; line-height: 1.5; }
         h1, h2, h3 { color: #1a202c; }
@@ -79,7 +79,7 @@ ob_start();
     </style>
 </head>
 <body>
-    <h1>Web Zoo App (dz2) <span class="badge badge-env">ENV: <?= htmlspecialchars($config?->env() ?? 'unknown') ?></span></h1>
+    <h1>web-zoo-app/dz2 <span class="badge badge-env">ENV: <?= htmlspecialchars($config?->env() ?? 'unknown') ?></span></h1>
     <p>Архитектурный фундамент: <strong>Статический конфиг с шифрованием параметров</strong> + <strong>Схема БД на 4 таблицы</strong>.</p>
 
     <div class="card-box">
